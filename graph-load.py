@@ -51,7 +51,7 @@ class SamplesReader:
         for i in range(0, len(run_paths_args)):
             run_path_arg = run_paths_args[i]
 
-            self.__run_files += {}
+            self.__run_files += [{}]
 
             for run_path in run_path_arg:
                 self.__run_files[i][run_path] = \
@@ -98,14 +98,14 @@ class SamplesReader:
 
 
 class SamplesAnalyzer:
-    def __init__(self, *samples):
+    def __init__(self, samples):
         self.__samples = samples
 
-    def average(self, sample_index, wtp_amount, lvap_amount, controller=None):
+    def average(self, wtp_amount, lvap_amount, controller=None):
         cpu_percentages = []
         memory_percentages = []
 
-        samples = self.__samples[sample_index]
+        samples = self.__samples
 
         for experiment_id in samples:
             if controller:
@@ -130,45 +130,47 @@ class SamplesAnalyzer:
 
         return cpu_average, cpu_deviation, memory_average, memory_deviation
 
-    def create_wtp_graph(self, wtp_amount, controller=None):
-
-
+    def get_stats(self, wtp_amount, controller=None):
         lvap_amounts = list(range(25, 625, 25))
 
-        for sample_index in range(0, len(self.__samples)):
-            cpu_plot_data = {}
-            memory_plot_data = {}
+        cpu_plot_data = {}
+        memory_plot_data = {}
 
-            for lvap_amount in lvap_amounts:
-                averages = self.average(wtp_amount, lvap_amount, controller)
-                cpu_plot_data[lvap_amount] = averages[:2]
-                memory_plot_data[lvap_amount] = averages[2:]
+        for lvap_amount in lvap_amounts:
+            averages = self.average(wtp_amount, lvap_amount, controller)
+            cpu_plot_data[lvap_amount] = averages[:2]
+            memory_plot_data[lvap_amount] = averages[2:]
 
-            if controller:
-                cpu_filename = "%s_wtp_%d_cpu.png" % (controller, wtp_amount)
-                memory_filename = "%s_wtp_%d_memory.png" % (controller, wtp_amount)
-            else:
-                cpu_filename = "avg_wtp_%d_cpu.png" % wtp_amount
-                memory_filename = "avg_wtp_%d_memory.png" % wtp_amount
+        return cpu_plot_data, memory_plot_data
 
-            self.create_plot(cpu_plot_data, "Number of LVAPs", "CPU usage(%)", cpu_filename)
-            self.create_plot(memory_plot_data, "Number of LVAPs", "Memory usage(%)", memory_filename)
 
-    def create_plot(self, plot_data, x_label, y_label, filename):
-        lists = sorted(plot_data.items())
+class SamplePlotter:
+    def __init__(self):
+        pass
 
-        x, y = zip(*lists)
+    def create_wtp_graph(self, wtp_amount, cpu_plot_data, memory_plot_data, controller=None):
+        if controller:
+            cpu_filename = "%s_wtp_%d_cpu.png" % (controller, wtp_amount)
+            memory_filename = "%s_wtp_%d_memory.png" % (controller, wtp_amount)
+        else:
+            cpu_filename = "avg_wtp_%d_cpu.png" % wtp_amount
+            memory_filename = "avg_wtp_%d_memory.png" % wtp_amount
 
-        y_0 = [i[0] for i in y]
-        y_1 = [i[1] for i in y]
+        self.create_plot(cpu_plot_data, "Number of LVAPs", "CPU usage(%)", cpu_filename)
+        self.create_plot(memory_plot_data, "Number of LVAPs", "Memory usage(%)", memory_filename)
 
-        with open("diff-mat.json", "w") as f:
-            json.dump({"x" : x, "y_0" : y_0, "y_1" : y_1}, f)
-
+    def create_plot(self, plots_data, x_label, y_label, filename):
         _, ax = plot.subplots()
 
-        ax.plot(x, y_0, label="Average")
-        ax.plot(x, y_1, label="Standard deviation")
+        for plot_name, plot_data in plots_data.items():
+            lists = sorted(plot_data.items())
+
+            x, y = zip(*lists)
+
+            y_0 = [i[0] for i in y]
+            y_1 = [i[1] for i in y]
+
+            ax.plot(x, y_0, label="Average %s" % plot_name)
 
         plot.xlabel(x_label)
         plot.ylabel(y_label)
@@ -188,9 +190,18 @@ if __name__ == "__main__":
     samples_1 = sample_reader.read(0)
     samples_2 = sample_reader.read(1)
 
-    samples_analyzer = SamplesAnalyzer(all_samples)
+    samples_analyzer_1 = SamplesAnalyzer(samples_1)
+    samples_analyzer_2 = SamplesAnalyzer(samples_2)
 
-    samples_analyzer.create_wtp_graph(20)
-    samples_analyzer.create_wtp_graph(40)
+    cpu_1, memory_1 = samples_analyzer_1.get_stats(20)
+    cpu_2, memory_2 = samples_analyzer_2.get_stats(10)
+
+    diff = {lvap : numpy.subtract(cpu_1[lvap], cpu_2[lvap]) for lvap in cpu_1}
+
+    sample_plotter = SamplePlotter()
+    sample_plotter.create_wtp_graph(20, {"1 controller" : cpu_1,
+                                         "2 controllers" : cpu_2,
+                                         "1 controller - Average 2 controllers" : diff},
+                                    {"1 controller" : memory_1, "2 controllers" : memory_2})
 
 
